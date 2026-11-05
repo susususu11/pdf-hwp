@@ -40,6 +40,7 @@ class MainActivity : FlutterActivity() {
                     initialUri = null
                     if (uri == null) result.success(null) else importInto(uri, result)
                 }
+                "isSelfTest" -> result.success(intent?.getBooleanExtra("selftest", false) ?: false)
                 else -> result.notImplemented()
             }
         }

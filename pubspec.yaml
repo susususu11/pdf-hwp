@@ -19,3 +19,4 @@ flutter:
   assets:
     - assets/converter/
     - assets/rhwp/
+    - assets/selftest/

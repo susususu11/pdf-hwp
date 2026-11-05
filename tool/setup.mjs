@@ -87,6 +87,12 @@ function main() {
     path.join(root, 'android_overlay/res/xml/network_security_config.xml'),
     path.join(appMain, 'res/xml/network_security_config.xml'),
   );
+  copyFileSync(path.join(root, 'android_overlay/proguard-rules.pro'), path.join(root, 'android/app/proguard-rules.pro'));
+  const gradleProperties = path.join(root, 'android/gradle.properties');
+  const properties = readFileSync(gradleProperties, 'utf8');
+  if (!properties.includes('android.enableR8.fullMode')) {
+    writeFileSync(gradleProperties, `${properties.trimEnd()}\nandroid.enableR8.fullMode=false\n`);
+  }
   const manifest = path.join(appMain, 'AndroidManifest.xml');
   writeFileSync(manifest, patchManifest(readFileSync(manifest, 'utf8')));
 

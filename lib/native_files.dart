@@ -46,6 +46,8 @@ class NativeFiles {
 
   Future<OpenedDocument?> takeInitial() => _invoke('takeInitialDocument');
 
+  Future<bool> isSelfTest() async => await _channel.invokeMethod<bool>('isSelfTest') ?? false;
+
   Future<OpenedDocument?> _invoke(String method) async {
     final map = await _channel.invokeMapMethod<String, String>(method);
     return map == null ? null : _describe(map);

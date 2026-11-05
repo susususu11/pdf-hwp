@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -45,6 +46,30 @@ class _EasyDocAppState extends State<EasyDocApp> {
     if (mounted) setState(() => _ready = true);
     final initial = await _files.takeInitial();
     if (initial != null) _open(initial);
+    if (await _files.isSelfTest()) await _runSelfTest();
+  }
+
+  /// 자동 시험 전용. 내장 문서를 실제 엔진으로 변환해 결과를 로그에 남긴다.
+  Future<void> _runSelfTest() async {
+    try {
+      final data = await rootBundle.load('assets/selftest/sample.hwpx');
+      final dir = await getApplicationSupportDirectory();
+      final file = File('${dir.path}/selftest.hwpx');
+      await file.writeAsBytes(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
+      final document = OpenedDocument(path: file.path, name: 'selftest.hwpx', hash: 'selftest', kind: DocumentKind.hwpx);
+      final watch = Stopwatch()..start();
+      final result = await _converter.convert(document);
+      final size = await File(result.pdfPath).length();
+      final text = result.pageTexts.isEmpty ? '' : result.pageTexts.first.replaceAll('\n', ' ');
+      final preview = text.length > 60 ? text.substring(0, 60) : text;
+      // ignore: avoid_print
+      print('SELFTEST OK ms=${watch.elapsedMilliseconds} pages=${result.pageTexts.length} '
+          'warn=${result.warningPages} pdfBytes=$size text=$preview');
+      _open(document);
+    } catch (error) {
+      // ignore: avoid_print
+      print('SELFTEST FAIL $error');
+    }
   }
 
   void _open(OpenedDocument document) {

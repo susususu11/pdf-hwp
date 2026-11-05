@@ -56,6 +56,10 @@ class ConverterService {
     _server = server;
     server.listen(_handle);
     await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+    await controller.setOnConsoleMessage((message) {
+      // ignore: avoid_print
+      print('WEBVIEW ${message.level.name}: ${message.message}');
+    });
     await controller.setNavigationDelegate(
       NavigationDelegate(
         onNavigationRequest: (request) {
