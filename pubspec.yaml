@@ -1,5 +1,5 @@
 name: easy_doc_viewer
-description: HWP, HWPX, PDF 문서를 기기 안에서 변환해 보여 주는 뷰어 프로토타입
+description: HWP, PDF, Office, 이미지, 텍스트 파일을 기기 안에서 보여 주는 뷰어 프로토타입
 publish_to: none
 version: 0.1.0+1
 
@@ -10,6 +10,7 @@ dependencies:
   flutter:
     sdk: flutter
   google_mobile_ads: ^9.0.0
+  in_app_purchase: ^3.2.0
   path_provider: ^2.1.5
   pdfrx: ^2.10.1
   webview_flutter: ^4.13.0
@@ -18,5 +19,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/converter/
+    - assets/viewer/
+    - assets/viewer/lib/
     - assets/rhwp/
     - assets/selftest/

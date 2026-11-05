@@ -11,7 +11,12 @@ import android.provider.OpenableColumns
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.DataInputStream
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.CharBuffer
+import java.nio.charset.Charset
+import java.nio.charset.CodingErrorAction
 import java.security.DigestInputStream
 import java.security.MessageDigest
 import java.util.concurrent.Executors
@@ -40,6 +45,7 @@ class MainActivity : FlutterActivity() {
                     initialUri = null
                     if (uri == null) result.success(null) else importInto(uri, result)
                 }
+                "readText" -> readText(call.argument<String>("path"), result)
                 "isSelfTest" -> result.success(intent?.getBooleanExtra("selftest", false) ?: false)
                 else -> result.notImplemented()
             }
@@ -126,6 +132,51 @@ class MainActivity : FlutterActivity() {
         return mapOf("path" to target.path, "name" to displayName(uri), "hash" to hash)
     }
 
+    private fun readText(path: String?, result: MethodChannel.Result) {
+        if (path == null) {
+            result.error("bad_args", "파일 경로가 없습니다", null)
+            return
+        }
+        executor.execute {
+            try {
+                val text = decodeText(File(path))
+                mainHandler.post { result.success(text) }
+            } catch (error: Exception) {
+                mainHandler.post { result.error("read_failed", error.message, null) }
+            }
+        }
+    }
+
+    /** 한국 PC에서 만든 메모장 파일은 UTF-8이 아닌 경우가 많아 인코딩을 판별해 읽는다. */
+    private fun decodeText(file: File): Map<String, Any> {
+        val length = minOf(file.length(), MAX_TEXT_BYTES).toInt()
+        val bytes = ByteArray(length)
+        DataInputStream(file.inputStream()).use { it.readFully(bytes) }
+        fun starts(vararg mark: Int): Boolean =
+            length >= mark.size && mark.indices.all { (bytes[it].toInt() and 0xFF) == mark[it] }
+        val text = when {
+            starts(0xEF, 0xBB, 0xBF) -> String(bytes, 3, length - 3, Charsets.UTF_8)
+            starts(0xFF, 0xFE) -> String(bytes, 2, length - 2, Charsets.UTF_16LE)
+            starts(0xFE, 0xFF) -> String(bytes, 2, length - 2, Charsets.UTF_16BE)
+            isUtf8(bytes) -> String(bytes, Charsets.UTF_8)
+            else -> String(bytes, koreanCharset())
+        }
+        return mapOf("text" to text, "truncated" to (file.length() > MAX_TEXT_BYTES))
+    }
+
+    /** 잘린 파일의 끝에 걸린 미완성 글자는 오류로 치지 않는다. */
+    private fun isUtf8(bytes: ByteArray): Boolean {
+        val decoder = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+        val output = CharBuffer.allocate(bytes.size + 1)
+        return !decoder.decode(ByteBuffer.wrap(bytes), output, false).isError
+    }
+
+    private fun koreanCharset(): Charset =
+        listOf("MS949", "windows-949", "EUC-KR").firstOrNull { Charset.isSupported(it) }?.let { Charset.forName(it) }
+            ?: Charsets.UTF_8
+
     private fun displayName(uri: Uri): String {
         contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) {
@@ -139,5 +190,6 @@ class MainActivity : FlutterActivity() {
     private companion object {
         const val CHANNEL = "easy_doc_viewer/files"
         const val PICK_REQUEST = 4101
+        const val MAX_TEXT_BYTES = 2L * 1024 * 1024
     }
 }

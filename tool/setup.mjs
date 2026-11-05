@@ -19,23 +19,35 @@ const MIME_TYPES = [
   'application/vnd.hancom.hwpx',
   'application/hwp+zip',
   'application/octet-stream',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'image/*',
+  'text/*',
 ];
+// 공유 메뉴에 text/*를 넣으면 링크나 문장을 공유할 때마다 이 앱이 후보로 나온다.
+const SEND_MIME_TYPES = [...MIME_TYPES.filter((m) => m !== 'text/*'), 'text/csv'];
+
+const SHEETJS_URL = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
 
 export function patchManifest(xml) {
   if (xml.includes('easy-doc-viewer-patched')) return xml;
-  const data = MIME_TYPES.map((m) => `                <data android:mimeType="${m}" />`).join('\n');
+  const dataFor = (types) => types.map((m) => `                <data android:mimeType="${m}" />`).join('\n');
   const filters = `
             <!-- easy-doc-viewer-patched -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:scheme="content" />
-${data}
+${dataFor(MIME_TYPES)}
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
-${data}
+${dataFor(SEND_MIME_TYPES)}
             </intent-filter>
 `;
   const meta = `
@@ -74,7 +86,21 @@ export function installEngine(extractedDir, dest) {
   console.log(`rhwp 엔진 설치: ${entry}, ${wasm}`);
 }
 
-function main() {
+/** npm의 SheetJS 0.18.5에는 보안 문제가 있어 빌드할 때 제작사 배포본의 수정판으로 바꾼다. */
+async function upgradeSheetJs() {
+  try {
+    const response = await fetch(SHEETJS_URL, { signal: AbortSignal.timeout(60000) });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const text = await response.text();
+    if (text.length < 500000 || !text.includes('XLSX')) throw new Error('내용이 올바르지 않습니다');
+    writeFileSync(path.join(root, 'assets/viewer/lib/xlsx.full.min.js'), text);
+    console.log('SheetJS 0.20.3 설치');
+  } catch (error) {
+    console.warn(`::warning::SheetJS 수정판을 받지 못해 0.18.5로 빌드합니다: ${error.message}`);
+  }
+}
+
+async function main() {
   run('flutter create --org app.easydoc --project-name easy_doc_viewer --platforms android --no-pub .');
   rmSync(path.join(root, 'test'), { recursive: true, force: true });
 
@@ -107,7 +133,8 @@ function main() {
   execSync(`tar -xzf "${name}"`, { cwd: temp, stdio: 'inherit' });
   installEngine(temp, path.join(root, 'assets/rhwp'));
   rmSync(temp, { recursive: true, force: true });
+  await upgradeSheetJs();
   console.log('\n준비 완료: flutter pub get 후 flutter run 또는 flutter build apk 를 실행하세요.');
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

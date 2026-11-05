@@ -38,6 +38,7 @@ class ConverterService {
   static const _mime = {
     'html': 'text/html; charset=utf-8',
     'js': 'text/javascript; charset=utf-8',
+    'css': 'text/css; charset=utf-8',
     'wasm': 'application/wasm',
   };
 
@@ -47,6 +48,8 @@ class ConverterService {
   late final String _token;
   _Job? _job;
   Future<void> _queue = Future.value();
+  final _views = <String, OpenedDocument>{};
+  final _viewReports = <String, Completer<String>>{};
 
   Future<void> start() async {
     if (_server != null) return;
@@ -68,6 +71,27 @@ class ConverterService {
         },
       ),
     );
+  }
+
+  /// Office 문서를 표시할 내부 주소를 만든다. 변환과 동시에 진행되어도 서로 섞이지 않는다.
+  Future<Uri> viewUrl(OpenedDocument document) async {
+    await start();
+    _views[document.hash] = document;
+    final port = _server!.port;
+    return Uri.parse(
+      'http://127.0.0.1:$port/$_token/app/viewer/office.html?kind=${document.kind.name}&view=${document.hash}',
+    );
+  }
+
+  /// 표시 페이지가 문서를 다 그렸거나 실패했다고 알릴 때까지 기다린다.
+  Future<String> waitForView(String hash) {
+    return _viewReports.putIfAbsent(hash, Completer<String>.new).future;
+  }
+
+  void _finishView(HttpRequest request, String text, {required bool ok}) {
+    final report = _viewReports.remove(request.uri.queryParameters['view']);
+    if (report == null) return;
+    ok ? report.complete(text) : report.completeError(Exception(text));
   }
 
   Future<ConversionResult> convert(
@@ -136,8 +160,19 @@ class ConverterService {
       }
       final route = segments.sublist(2).join('/');
       final job = _job;
-      if (route.startsWith('converter/') || route.startsWith('rhwp/')) {
+      if (route.startsWith('converter/') || route.startsWith('rhwp/') || route.startsWith('viewer/')) {
         await _serveAsset(route, response);
+      } else if (route == 'view-doc') {
+        final document = _views[request.uri.queryParameters['view']];
+        if (document == null) {
+          response.statusCode = HttpStatus.notFound;
+        } else {
+          response.headers.contentType = ContentType.binary;
+          await response.addStream(File(document.path).openRead());
+        }
+      } else if (route == 'view-ok' || route == 'view-fail') {
+        final text = await utf8.decoder.bind(request).join();
+        _finishView(request, text, ok: route == 'view-ok');
       } else if (job == null) {
         response.statusCode = HttpStatus.conflict;
       } else if (route == 'doc') {

@@ -8,7 +8,9 @@ HWP·HWPX를 휴대폰 안에서 PDF로 바꿔 보여 주고, PDF는 그대로 �
 - HWP·HWPX → PDF 변환, 변환본 저장 (같은 문서는 다시 변환하지 않음)
 - 글자가 겹치면 "내용이 가려졌을 수 있습니다" 경고
 - 텍스트로 보기
+- Word(.docx), Excel(.xlsx, .xls), PowerPoint(.pptx), 이미지, 텍스트 파일 보기
 - 문서와 겹치지 않는 하단 고정 배너 (Google 시험 광고)
+- 한 번 결제로 광고를 없애는 인앱 상품 `remove_ads`와 구매 복원
 
 ## 방법 1: PC 설치 없이 APK 받기
 1. GitHub에 새 저장소를 만들고 이 폴더의 파일을 모두 올립니다. 숨김 폴더 `.github`도 포함해야 합니다.
@@ -30,6 +32,8 @@ flutter run
 `tool/browser_test.mjs`는 rhwp CLI의 SVG로 Chromium에서 이 흐름을 검사합니다.
 
 ## 출시 전 할 일
+- 자동 시험 코드(`_runSelfTest`, `assets/selftest`)와 `proguard-rules.pro`의 진단 설정 제거
+- Play Console에 관리형 인앱 상품 `remove_ads` 생성 (없으면 결제 창에 안내 문구만 나온다)
 - `lib/screens.dart`의 배너 ID와 `tool/setup.mjs`의 AdMob 앱 ID를 실제 값으로 교체
 - 업로드 서명 키 설정, 개인정보 처리방침 작성
 - 앱 안에 `THIRD_PARTY_NOTICES.md` 내용 표시

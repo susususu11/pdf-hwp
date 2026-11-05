@@ -26,7 +26,7 @@ const out = await page.evaluate(async ({ base, n }) => {
   const { convert } = await import(`${base}/app/converter.js`);
   const texts = [];
   for (let i = 0; i < n; i++) texts.push(await (await fetch(`${base}/svg/${i}`)).text());
-  const stub = { HwpDocument: class { pageCount() { return n; } renderPageSvg(i) { return texts[i]; } getPageText(i) { return `page ${i + 1}`; } free() {} } };
+  const stub = { HwpDocument: class { pageCount() { return n; } renderPageSvg(i) { return texts[i]; } getPageTextLayout(i) { return JSON.stringify({ runs: [{ text: `page ${i + 1}`, x: 10, y: 10, w: 40, h: 12 }, { text: '표 안 글', x: 60, y: 10, w: 40, h: 12 }, { text: '다음 줄', x: 10, y: 30, w: 40, h: 12 }] }); } free() {} } };
   const progress = [];
   const t = performance.now();
   const { pdf, meta } = await convert(stub, new Uint8Array(1), (d, c) => progress.push(`${d}/${c}`));

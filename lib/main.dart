@@ -10,6 +10,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import 'converter.dart';
 import 'native_files.dart';
+import 'purchases.dart';
 import 'screens.dart';
 
 Future<void> main() async {
@@ -27,22 +28,28 @@ class EasyDocApp extends StatefulWidget {
 
 class _EasyDocAppState extends State<EasyDocApp> {
   final _navigator = GlobalKey<NavigatorState>();
+  final _messenger = GlobalKey<ScaffoldMessengerState>();
   final _files = NativeFiles();
   final _converter = ConverterService();
   final _recent = RecentDocuments();
   StreamSubscription<OpenedDocument>? _subscription;
+  StreamSubscription<String>? _notices;
   bool _ready = false;
 
   @override
   void initState() {
     super.initState();
     _subscription = _files.opened.listen(_open);
+    _notices = purchases.notices.listen((text) {
+      _messenger.currentState?.showSnackBar(SnackBar(content: Text(text)));
+    });
     _prepare();
   }
 
   Future<void> _prepare() async {
     await _converter.start();
     await _recent.load();
+    await purchases.start();
     if (mounted) setState(() => _ready = true);
     final initial = await _files.takeInitial();
     if (initial != null) _open(initial);
@@ -65,6 +72,7 @@ class _EasyDocAppState extends State<EasyDocApp> {
       // ignore: avoid_print
       print('SELFTEST OK ms=${watch.elapsedMilliseconds} pages=${result.pageTexts.length} '
           'warn=${result.warningPages} pdfBytes=$size text=$preview');
+      await _selfTestViewers();
       _open(document);
     } catch (error) {
       // ignore: avoid_print
@@ -72,8 +80,33 @@ class _EasyDocAppState extends State<EasyDocApp> {
     }
   }
 
+  /// 앱이 받은 파일처럼 형식을 판별하고, 실제 화면까지 열어 본다.
+  Future<void> _selfTestViewers() async {
+    final dir = await getApplicationSupportDirectory();
+    for (final name in const ['sample.docx', 'sample.xlsx', 'sample.pptx', 'sample.png', 'euckr.txt', 'utf8.txt']) {
+      final data = await rootBundle.load('assets/selftest/$name');
+      final file = File('${dir.path}/selftest_$name');
+      await file.writeAsBytes(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
+      final kind = await _files.detect(file.path, name);
+      final document = OpenedDocument(path: file.path, name: name, hash: 'selftest-$name', kind: kind);
+      var detail = '';
+      if (document.isOffice) {
+        final report = _converter.waitForView(document.hash);
+        _open(document);
+        detail = await report.timeout(const Duration(seconds: 60));
+        _navigator.currentState?.pop();
+      } else if (kind == DocumentKind.text) {
+        detail = (await NativeFiles.readText(file.path)).lines.first;
+      }
+      // ignore: avoid_print
+      print('SELFTEST VIEW $name kind=${kind.name} $detail');
+    }
+    // ignore: avoid_print
+    print('SELFTEST BILLING available=${await purchases.refresh()}');
+  }
+
   void _open(OpenedDocument document) {
-    if (document.kind != DocumentKind.unsupported) unawaited(_recent.add(document));
+    if (document.canOpen) unawaited(_recent.add(document));
     _navigator.currentState?.push(
       MaterialPageRoute<void>(builder: (_) => ReaderScreen(document: document, converter: _converter)),
     );
@@ -82,6 +115,8 @@ class _EasyDocAppState extends State<EasyDocApp> {
   @override
   void dispose() {
     _subscription?.cancel();
+    _notices?.cancel();
+    purchases.dispose();
     super.dispose();
   }
 
@@ -90,6 +125,7 @@ class _EasyDocAppState extends State<EasyDocApp> {
     return MaterialApp(
       title: '편한 문서 뷰어',
       navigatorKey: _navigator,
+      scaffoldMessengerKey: _messenger,
       theme: ThemeData(colorSchemeSeed: Colors.indigo, useMaterial3: true),
       builder: (context, child) => Stack(
         fit: StackFit.expand,
@@ -162,7 +198,20 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('편한 문서 뷰어')),
+      appBar: AppBar(
+        title: const Text('편한 문서 뷰어'),
+        actions: [
+          ValueListenableBuilder<bool>(
+            valueListenable: purchases.adFree,
+            builder: (context, adFree, _) => adFree
+                ? const SizedBox.shrink()
+                : TextButton(
+                    onPressed: () => showModalBottomSheet<void>(context: context, builder: (_) => const RemoveAdsSheet()),
+                    child: const Text('광고 제거'),
+                  ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: onPick,
         icon: const Icon(Icons.folder_open),
@@ -172,7 +221,7 @@ class HomeScreen extends StatelessWidget {
         listenable: recent,
         builder: (context, _) {
           if (recent.items.isEmpty) {
-            return const Center(child: Text('HWP, HWPX, PDF 문서를 열어 보세요'));
+            return const Center(child: Text('HWP, PDF, Office, 이미지, 텍스트 파일을 열어 보세요', textAlign: TextAlign.center));
           }
           return ListView(
             children: [
@@ -180,12 +229,65 @@ class HomeScreen extends StatelessWidget {
                 ListTile(
                   leading: const Icon(Icons.description_outlined),
                   title: Text(document.name, overflow: TextOverflow.ellipsis),
-                  subtitle: Text(document.kind.name.toUpperCase()),
+                  subtitle: Text(document.kind.label),
                   onTap: () => onOpen(document),
                 ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class RemoveAdsSheet extends StatefulWidget {
+  const RemoveAdsSheet({super.key});
+
+  @override
+  State<RemoveAdsSheet> createState() => _RemoveAdsSheetState();
+}
+
+class _RemoveAdsSheetState extends State<RemoveAdsSheet> {
+  late final Future<bool> _available = purchases.refresh().catchError((Object _) => false);
+
+  Future<void> _run(Future<void> Function() action) async {
+    Navigator.of(context).pop();
+    try {
+      await action();
+    } catch (_) {
+      // 결과는 PurchaseService가 알린다. 스토어 호출 자체의 실패는 다시 시도하면 된다.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: FutureBuilder<bool>(
+          future: _available,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) {
+              return const SizedBox(height: 120, child: Center(child: CircularProgressIndicator()));
+            }
+            final product = purchases.product;
+            if (!snapshot.data! || product == null) {
+              return const Text('지금은 결제를 사용할 수 없습니다.\nPlay 스토어에서 설치한 앱에서 다시 시도해 주세요.');
+            }
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text('광고 제거', style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 8),
+                const Text('한 번만 결제하면 이 Google 계정에서 광고가 계속 사라집니다.'),
+                const SizedBox(height: 16),
+                FilledButton(onPressed: () => _run(purchases.buy), child: Text('${product.price} 결제')),
+                TextButton(onPressed: () => _run(purchases.restore), child: const Text('구매 복원')),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
