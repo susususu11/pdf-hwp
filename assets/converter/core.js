@@ -64,6 +64,31 @@ export function countTextOverlaps(items, cellSize = 24) {
 /** 겹친 글자가 몇 자 이상이면 "내용이 가려졌을 수 있다"고 알린다. */
 export const OVERLAP_WARNING_CHARS = 6;
 
+/**
+ * getPageTextLayout의 글자 조각을 읽기 순서 그대로 이어 쪽 글자로 만든다.
+ * 표 안의 글자도 포함되고, 화면에서 가려진 글자도 여기서는 읽을 수 있다.
+ */
+export function textFromRuns(runs) {
+  const lines = [];
+  let line = '';
+  let last = null;
+  for (const run of runs) {
+    const text = run.text ?? '';
+    if (!text.trim() && last === null) continue;
+    const sameLine = last !== null && Math.abs(run.y - last.y) < Math.max(last.h ?? 0, 1) * 0.5 && run.x >= last.x;
+    if (sameLine) {
+      const gap = run.x - (last.x + (last.w ?? 0));
+      line += (gap > 2 && !line.endsWith(' ') ? ' ' : '') + text;
+    } else {
+      if (line.trim()) lines.push(line.trim());
+      line = text;
+    }
+    last = run;
+  }
+  if (line.trim()) lines.push(line.trim());
+  return lines.join('\n');
+}
+
 export function svgSize(svg) {
   const head = svg.slice(0, 400);
   return { width: parseFloat(attr(head, 'width')), height: parseFloat(attr(head, 'height')) };

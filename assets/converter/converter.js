@@ -1,6 +1,6 @@
 // 앱 안의 보이지 않는 WebView에서 실행된다.
 // 127.0.0.1의 앱 내부 서버에서 문서를 받아 PDF로 바꾼 뒤 다시 앱으로 보낸다.
-import { parseTextItems, countTextOverlaps, svgSize, buildPdf, OVERLAP_WARNING_CHARS } from './core.js';
+import { parseTextItems, countTextOverlaps, svgSize, buildPdf, textFromRuns, OVERLAP_WARNING_CHARS } from './core.js';
 
 const RENDER_SCALE = 2; // 96dpi 기준 2배. 올리면 선명해지지만 파일이 커진다.
 const JPEG_QUALITY = 0.86;
@@ -45,7 +45,7 @@ function installTextMeasure() {
 
 function readText(doc, page) {
   try {
-    return doc.getPageText(page);
+    return textFromRuns(JSON.parse(doc.getPageTextLayout(page)).runs ?? []);
   } catch {
     return '';
   }
