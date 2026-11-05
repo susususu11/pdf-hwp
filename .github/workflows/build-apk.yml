@@ -44,8 +44,16 @@ jobs:
           script: |
             adb install build/app/outputs/flutter-apk/app-release.apk
             adb logcat -c
-            adb shell am start -W -n app.easydoc.easy_doc_viewer/.MainActivity || true
-            sleep 20
+            adb shell am start -W -n app.easydoc.easy_doc_viewer/.MainActivity --ez selftest true || true
+            sleep 90
             echo "=== PROCESS ===" ; adb shell pidof app.easydoc.easy_doc_viewer || echo "APP NOT RUNNING"
             echo "=== CRASH LOG ===" ; adb logcat -d -b crash || true
+            echo "=== SELFTEST ===" ; adb logcat -d | grep -E "SELFTEST|WEBVIEW" || true
             echo "=== APP LOG ===" ; adb logcat -d -t 500 | grep -E "FATAL|AndroidRuntime|flutter|F DEBUG|Abort|easy_doc" || true
+            adb exec-out screencap -p > emulator-screen.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: emulator-screen
+          path: emulator-screen.png
+          if-no-files-found: ignore
